@@ -2,29 +2,37 @@
   "name": "graphql.js",
   "version": "0.6.8",
   "description": "GraphQL Client for JavaScript",
-  "main": "graphql.js",
   "directories": {
     "example": "example",
-    "test": "test"
+    "test": "tests"
   },
   "files": [
-    "graphql.js",
-    "graphql.min.js"
+    "dist"
   ],
+  "main": "./dist/graphql.js.umd.js",
+  "module": "./dist/graphql.js.mjs",
+  "exports": {
+    ".": {
+      "import": "./dist/graphql.js.mjs",
+      "require": "./dist/graphql.js.umd.js"
+    }
+  },
   "scripts": {
-    "test": "jest --coverage",
-    "build": "uglifyjs graphql.js -o graphql.min.js"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "build": "vite build"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/f/graphql-client.git"
   },
   "devDependencies": {
-    "babel-runtime": "^6.26.0",
-    "jest": "^27.4.5",
-    "jest-plugin-set": "^2.9.0",
+    "@vitest/coverage-c8": "^0.31.1",
     "jest-mock-random": "^1.1.1",
-    "uglify-js": "^3.14.5"
+    "msw": "^1.2.1",
+    "vite": "^4.3.9",
+    "vitest": "^0.31.1",
+    "vitest-plugin-set": "^1.0.0"
   },
   "keywords": [
     "graphql",

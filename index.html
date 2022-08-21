@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+    <meta charset="utf-8">
+    <title>GraphQL.js testing</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.9.6/ace.min.js"
+            integrity="sha512-U2JKYiHG3ixOjmdycNbi4Xur8q4Nv73CscCGEopBeiVyzDR5ErC6jmHNr0pOB8CUVWb0aQXLgL0wYXhoMU6iqw=="
+            crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="src/graphql.js"></script>
+    <style lang="text/css">
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        #content {
+            flex-grow: 1;
+            flex-shrink: 1;
+            display: flex;
+            flex-direction: row;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        #header {
+            padding: 1rem;
+            height: 2rem;
+            flex-shrink: 0;
+        }
+
+        #editor-section {
+            flex-grow: 1;
+        }
+
+        #output-section {
+            flex-shrink: 0;
+            width: 30vw;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #output-section header {
+            flex-shrink: 0;
+            padding-bottom: 0.25rem;
+            padding-left: 0.25rem;
+            border-bottom: 1px solid #333;
+        }
+
+        #editor {
+            height: 100%;
+        }
+
+        #output {
+            flex-grow: 1;
+            padding: 0.25rem;
+            overflow: auto;
+        }
+    </style>
+</head>
+<body>
+<header id="header">
+    <label for="editor">Testing source</label>
+    <button id="run">Run</button>
+</header>
+<section id="content">
+    <section id="editor-section">
+        <div id="editor">let graph = graphql("http://127.0.0.1:5174/graphql", {asJSON: true, debug: true});
+graph.query('{ users { id } }', {}).then(data => console.log(data));</div>
+    </section>
+    <section id="output-section">
+        <header>
+            <button id="clear">Clear</button>
+        </header>
+        <div id="output"></div>
+    </section>
+</section>
+<script>
+    (function () {
+        function format(args) {
+            return Array.prototype.map.call(args, e => e.toString()).join(' ');
+        }
+        const logger = {
+            log() {
+                const output = document.getElementById('output');
+                const elem = document.createElement('div');
+                elem.innerText = format(arguments);
+                output.append(elem);
+            },
+        };
+
+        ace.config.set('basePath', 'https://cdnjs.cloudflare.com/ajax/libs/ace/1.9.6/');
+        let editor = ace.edit("editor");
+        editor.setTheme("ace/theme/monokai");
+        editor.session.setMode("ace/mode/javascript");
+
+        document.getElementById('run').addEventListener('click', () => {
+            let src = editor.getValue();
+            const f = new Function('console', src);
+            try {
+                f(logger);
+            } catch (ex) {
+                logger.log(ex);
+            }
+        });
+
+        document.getElementById('clear').addEventListener('click', () => {
+            document.getElementById('output').innerHTML = '';
+        })
+    })();
+</script>
+</body>
+</html>

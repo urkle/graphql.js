@@ -89,7 +89,7 @@
           onRequestError(err);
         });
       }
-      req.write(body)
+      req.write(body || [])
       req.end()
     }
   }
@@ -540,7 +540,7 @@
     } else {
       root.graphql = factory(root.GraphQLClient)
     }
-  }(this || self, function () {
+  }(this || self, function () {
     return GraphQLClient
   }))
 })()
