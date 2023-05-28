@@ -3,13 +3,15 @@ import {expect, describe, it, beforeEach} from 'vitest';
 import {mockServer, graphqlEndpoint, endpointUrl} from 'tests/mock_server';
 import {mockRandom, resetMockRandom} from 'jest-mock-random';
 
-// import graphql from '../src/graphql.js';
-const graphql = require('../src/graphql');
+import graphql from '../src/graphql.js';
 
 let requests= [];
 let payloads = {
     posts: ({id}) => ({id, title: 'hi', text: 'hello'}),
+    createPost: ({input}) => ({id: 1, ...input}),
     comments: (_) => ([{ comment: 'hi', owner: { name: 'bob' } }]),
+    simpleQuery: (_) => ({version: 1}),
+    simpleMutate: (_) => ({version: 1}),
 };
 
 beforeEach(() => {
@@ -28,22 +30,28 @@ beforeEach(() => {
             let response = {};
             if (request.query.match(/merge/)) {
                 if (request.query.match(/merge1234_post/)) {
-                    response.merge1234_post = payloads.posts.call(null, {id: request.variables.merge1234__id});
+                    response.merge1234_post = payloads.posts({id: request.variables.merge1234__id});
                 }
                 if (request.query.match(/merge4321_commentsOfPost/)) {
-                    response.merge4321_commentsOfPost = payloads.comments.call(null, {postId: request.variables.merge4321__postId});
+                    response.merge4321_commentsOfPost = payloads.comments({postId: request.variables.merge4321__postId});
                 }
             } else if (request.query.match(/\$id/)) {
-                response.post = payloads.posts.call(null, request.variables);
+                response.post = payloads.posts(request.variables);
             } else if (request.query.match(/\$postId/)) {
-                response.commentsOfPost = payloads.comments.call(null, request.variables);
+                response.commentsOfPost = payloads.comments(request.variables);
+            } else if (request.query.match(/createPost/)) {
+                response.createPost = payloads.createPost(request.variables);
+            } else if (request.query.match(/simpleQuery/)) {
+                response.simpleQuery = payloads.simpleQuery(request.variables);
+            } else if (request.query.match(/simpleMutate/)) {
+                response.simpleMutate = payloads.simpleMutate(request.variables);
             }
             return res(ctx.data(response));
         }),
     );
 });
 
-/* global client, method, url, fetchPost, fetchComments */
+/* global subject, client, method, url, fetchPost, fetchComments */
 describe('graphql.js', () => {
     set('url', () => null);
     set('method', () => 'POST');
@@ -63,6 +71,10 @@ describe('graphql.js', () => {
         expect(typeof client).toBe('function');
     });
 
+    describe('new GraphQLClient', () => {
+       expect(() => new graphql(endpointUrl)).toThrowError(/You cannot create/);
+    });
+
     describe('.fragment()', () => {
         it('registers a new fragment', () => {
             client.fragment({
@@ -75,6 +87,10 @@ describe('graphql.js', () => {
                 'fragment auth_error on Error {messages}'
             );
         });
+
+        it('throws error when fragment not found', () => {
+            expect(() => client.fragment('myFragment')).toThrowError('Fragment myFragment not found!')
+        })
     });
 
     describe('.getOptions()', () => {
@@ -197,7 +213,218 @@ fragment auth_error on Error {messages}`;
         })
     });
 
-    describe('query testing', () => {
+    describe('.ql()', () => {
+       it('builds a query', () => {
+           const query = client.ql('query {... auth_user}');
+
+           expect(query).toEqual("query {... auth_user}\n\n"
+                +"fragment user on User {name}\n\n"
+                +"fragment auth_user on User {token, ...user}");
+       });
+    });
+
+    describe('.ql es6 template', () => {
+        it('builds a query', () => {
+            const query = client.ql`query {... auth.user}`;
+
+            expect(query).toEqual("query {... auth_user}\n\n"
+                +"fragment user on User {name}\n\n"
+                +"fragment auth_user on User {token, ...user}");
+        });
+    });
+
+    describe('when no URL is set', () => {
+       set('subject', () => client.query`simpleQuery { version}`);
+
+       it('returns an error', async () => {
+           await expect(subject).rejects.toThrow('No URL specified');
+       });
+    });
+
+    describe('direct run', () => {
+        set('url', () => endpointUrl);
+
+        describe('graph(...)()', () => {
+            set('subject', () => client(`query { post(id: $id) { id title text} }`)({id: 123}));
+
+            it('returns the payload from the server', async () => {
+                const response = await subject;
+
+                expect(response).toEqual({post:{id: 123, title: 'hi', text: 'hello'}});
+            })
+
+            it('makes the request passing the parameters as query arguments', async () => {
+                await subject;
+
+                const request = requests[0];
+
+                expect(request.variables).toEqual({id: 123});
+                expect(request.query).toMatch('post(id: $id)');
+            });
+        });
+
+        describe('graph.query(...)()', () => {
+            set('subject', () => client.query(`($id: ID!) { post(id: $id) { id title text}}`)({id: 123}));
+
+            it('returns the payload from the server', async () => {
+                const response = await subject;
+
+                expect(response).toEqual({post:{id: 123, title: 'hi', text: 'hello'}});
+            })
+
+            it('makes the request passing the parameters as query arguments', async () => {
+                await subject;
+
+                const request = requests[0];
+
+                expect(request.variables).toEqual({id: 123});
+                expect(request.query).toMatch('post(id: $id)');
+            });
+        });
+
+        describe('graph.mutate(...)()', () => {
+            set('subject', () => client.mutate(`($input: Input!) { createPost(input: $input) { id title text} }`)({input: {title: 'yo'}}));
+
+            it('returns the payload from the server', async () => {
+                const response = await subject;
+
+                expect(response).toEqual({createPost: {id: 1, title: 'yo'}});
+            })
+
+            it('makes the request passing the parameters as query arguments', async () => {
+                await subject;
+
+                const request = requests[0];
+
+                expect(request.variables).toEqual({input: {title: 'yo'}});
+                expect(request.query).toMatch('createPost(input: $input)');
+            });
+        });
+    });
+
+    describe('direct run with run()', () => {
+        set('url', () => endpointUrl);
+
+        describe('graph.run(...)', () => {
+            set('subject', () => client.run(`query { simpleQuery { version} }`));
+
+            it('returns the payload from the server', async () => {
+                const response = await subject;
+
+                expect(response).toEqual({simpleQuery: {version: 1}});
+            })
+
+            it('makes the request passing the parameters as query arguments', async () => {
+                await subject;
+
+                const request = requests[0];
+
+                expect(request.variables).toEqual({});
+                expect(request.query).toMatch('simpleQuery');
+            });
+        });
+
+        describe('graph.query.run(...)', () => {
+            set('subject', () => client.query.run(`simpleQuery { version }`));
+
+            it('returns the payload from the server', async () => {
+                const response = await subject;
+
+                expect(response).toEqual({simpleQuery: {version: 1}});
+            })
+
+            it('makes the request passing the parameters as query arguments', async () => {
+                await subject;
+
+                const request = requests[0];
+
+                expect(request.variables).toEqual( {});
+                expect(request.query).toMatch('simpleQuery');
+            });
+        });
+
+        describe('graph.mutate.run(...)', () => {
+            set('subject', () => client.mutate.run(`simpleMutate { version }`));
+
+            it('returns the payload from the server', async () => {
+                const response = await subject;
+
+                expect(response).toEqual({simpleMutate: { version: 1}});
+            })
+
+            it('makes the request passing the parameters as query arguments', async () => {
+                await subject;
+
+                const request = requests[0];
+
+                expect(request.variables).toEqual({});
+                expect(request.query).toMatch('simpleMutate');
+            });
+        });
+    });
+
+    describe('direct run with es6 template', () => {
+        set('url', () => endpointUrl);
+
+        describe('graph`...`', () => {
+            set('subject', () => client`query { simpleQuery { version} }`);
+
+            it('returns the payload from the server', async () => {
+                const response = await subject;
+
+                expect(response).toEqual({simpleQuery: {version: 1}});
+            })
+
+            it('makes the request passing the parameters as query arguments', async () => {
+                await subject;
+
+                const request = requests[0];
+
+                expect(request.variables).toEqual({});
+                expect(request.query).toMatch('simpleQuery');
+            });
+        });
+
+        describe('graph.query`...`', () => {
+            set('subject', () => client.query`simpleQuery { version }`);
+
+            it('returns the payload from the server', async () => {
+                const response = await subject;
+
+                expect(response).toEqual({simpleQuery: {version: 1}});
+            })
+
+            it('makes the request passing the parameters as query arguments', async () => {
+                await subject;
+
+                const request = requests[0];
+
+                expect(request.variables).toEqual( {});
+                expect(request.query).toMatch('simpleQuery');
+            });
+        });
+
+        describe('graph.mutate`...`', () => {
+            set('subject', () => client.mutate`simpleMutate { version }`);
+
+            it('returns the payload from the server', async () => {
+                const response = await subject;
+
+                expect(response).toEqual({simpleMutate: { version: 1}});
+            })
+
+            it('makes the request passing the parameters as query arguments', async () => {
+                await subject;
+
+                const request = requests[0];
+
+                expect(request.variables).toEqual({});
+                expect(request.query).toMatch('simpleMutate');
+            });
+        });
+    });
+
+    describe('prepared queries', () => {
         set('fetchPost', () => client.query(`{
   post(id: $id) {
     id
@@ -213,7 +440,6 @@ fragment auth_error on Error {messages}`;
     }
   }
 }`));
-
         set('url', () => endpointUrl);
 
         describe('when method is GET', () => {
@@ -328,6 +554,28 @@ fragment auth_error on Error {messages}`;
                     });
                 });
             });
+        });
+    });
+
+    describe('.merge()/.commit()', () => {
+        set('url', () => endpointUrl);
+        set('fetchPost', () => client.query(`($id: ID) {
+  post(id: $id) {
+    id
+    title
+    text
+  }
+}`));
+
+        it('errors when commit called with no merge calls', () => {
+            expect(() => client.commit('buildPage')).toThrowError('You cannot commit the merge');
+        });
+
+        it('errors when no variables passed', async () => {
+            // This really is incorrect behavior here. As if the variable is optional then it shouldn't matter
+            fetchPost.merge('buildPage');
+
+            expect(() => client.commit('buildPage')).toThrowError('Unused variable on merge');
         });
     });
 });
